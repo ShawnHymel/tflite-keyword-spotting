@@ -20,6 +20,13 @@
 #  * soundfile
 #  * shutil
 #
+# Example call:
+# python wake_word_mixer.py -d "..\datasets\custom_wake_words_edited" 
+#           -b "..\datasets\ambient_sounds" 
+#           -o "..\datasets\custom_wake_words_mixed" 
+#           -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
+#           -n 5
+#
 # The MIT License (MIT)
 #
 # Copyright (c) 2020 Shawn Hymel
@@ -98,7 +105,13 @@ def query_yes_no(question, default="yes"):
 
 # Print iterations progress
 # From: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
-def print_progress_bar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+def print_progress_bar (iteration, total, 
+                        prefix = '', 
+                        suffix = '', 
+                        decimals = 1, 
+                        length = 100, 
+                        fill = '█', 
+                        printEnd = "\r"):
     """
     Call in a loop to create terminal progress bar
     @params:
@@ -181,19 +194,19 @@ def mix_files(word_dir, bg_dir, out_dir, num_file_digits=None, start_cnt=0):
     num_word_files = len(listdir(word_dir))
     num_bg_files = len(listdir(bg_dir))
     num_output_files = num_word_files * num_bg_files
-    calc_files = num_output_files
-    digit_cnt = 1
-    while(calc_files > 1):
-        calc_files = calc_files // 10
-        digit_cnt += 1
+    digit_cnt = len(str(num_output_files))
+
+    # We can't handle no output files
+    if num_output_files == 0:
+        return 0
 
     # If we're not given a file digits length, use the one we just calculated
     if num_file_digits is None:
         num_file_digits = digit_cnt
 
     # Show progress bar
-    print(str(num_word_files) + " word files * " + str(num_bg_files) + " bg files = " +
-            str(num_output_files) + " output files")
+    print(str(num_word_files) + " word files * " + str(num_bg_files) + 
+            " bg files = " + str(num_output_files) + " output files")
     print_progress_bar(0, 
                         num_output_files, 
                         prefix="Progress:", 
@@ -234,6 +247,9 @@ def mix_files(word_dir, bg_dir, out_dir, num_file_digits=None, start_cnt=0):
 
 ################################################################################
 # Main
+
+###
+# Parse command line arguments
 
 # Script arguments
 parser = argparse.ArgumentParser(description="Audio mixing tool that "
@@ -289,7 +305,7 @@ parser.add_argument('-g',
                     type=float,
                     default=1.0,
                     help="Relative volume to multiply each background noise by "
-                         "(default: 1.0)")
+                            "(default: 1.0)")
 parser.add_argument('-s',
                     '--sample_time',
                     action='store',
@@ -303,7 +319,8 @@ parser.add_argument('-r',
                     dest='sample_rate',
                     type=int,
                     default=16000,
-                    help="Sample rate (Hz) of each output clip (default: 16000")
+                    help="Sample rate (Hz) of each output clip (default: "
+                            "16000)")
 parser.add_argument('-e',
                     '--bit_depth',
                     action='store',
@@ -313,6 +330,14 @@ parser.add_argument('-e',
                              'DOUBLE'],
                     default='PCM_16',
                     help="Bit depth of each sample (default: PCM_16)")
+parser.add_argument('-n',
+                    '--num_bg_samples',
+                    action='store',
+                    dest='num_bg_samples',
+                    type=int,
+                    default=3,
+                    help="Number of random clips to take from each background "
+                            "noise file (default: 3)")
 
 # Parse arguments
 args = parser.parse_args()
@@ -325,12 +350,20 @@ bg_vol = args.bg_vol
 sample_time = args.sample_time
 sample_rate = args.sample_rate
 bit_depth = args.bit_depth
+num_bg_samples = args.num_bg_samples
+
+###
+# Welcome screen
+
 
 # Print tool welcome message
 print("-----------------------------------------------------------------------")
 print("Wake Word Mixer Tool")
 print("v" + __version__)
 print("-----------------------------------------------------------------------")
+
+###
+# Set up directories
 
 # Create a list of possible words from the subdirectories
 word_list = [name for name in listdir(words_dir)]
@@ -372,6 +405,63 @@ else:
     print("ERROR: Output directory could not be deleted. Exiting.")
     exit()
 
+###
+# Save clips of background noise
+
+# Create _background subdirectory
+out_subdir = join(out_dir, bg_dir_name)
+makedirs(out_subdir)
+
+# Go through each file, grabbing some snippets from each
+num_bg_files = len(listdir(bg_dir))
+num_bg_clips = num_bg_samples * num_bg_files
+digit_cnt = len(str(num_bg_clips))
+
+# Print what we're doing and show progress bar
+print("Gathering random background noise snippets")
+print(str(num_bg_samples) + " samples per file * " + str(num_bg_files) + 
+        " bg files = " + str(num_bg_clips) + " output files")
+print_progress_bar(0, 
+                    num_bg_clips, 
+                    prefix="Progress:", 
+                    suffix="Complete", 
+                    length=50)
+
+# Go through each background file, taking a random sample from different points
+file_cnt = 0
+for bg_filename in listdir(bg_dir):
+    for i in range(num_bg_samples):
+
+        # Get random snippet from background noise
+        waveform = mix_audio(word_path=None, 
+                                bg_path=join(bg_dir, bg_filename), 
+                                word_vol=word_vol, 
+                                bg_vol=bg_vol, 
+                                sample_time=sample_time,
+                                sample_rate=sample_rate)
+        
+        # Save to new file
+        filename = str(file_cnt).zfill(digit_cnt) + '.wav'
+        sf.write(join(out_subdir, filename), 
+                waveform, 
+                sample_rate, 
+                subtype=bit_depth)
+        file_cnt += 1
+
+        # Update progress bar
+        print_progress_bar(file_cnt + 1, 
+                            num_bg_clips, 
+                            prefix="Progress:", 
+                            suffix="Complete", 
+                            length=50)
+
+# Newline to exit progress bar
+print()
+
+
+###
+# Mix target words
+
 # Start with target words
 for target in target_list:
 
@@ -385,6 +475,9 @@ for target in target_list:
     # Start the mixing machine
     print("Mixing: '" + str(target) +"'")
     mix_files(word_path, bg_dir, out_subdir)
+
+###
+# Mix words in "other" category
 
 # Figure out total number of words in other category
 num_word_files = 0
