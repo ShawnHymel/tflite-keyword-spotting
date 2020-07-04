@@ -7,7 +7,12 @@
 # combines them with random snippets of background noise. Samples that are too
 # long are truncated at the end, and samples that are too short are padded with
 # 0s (also at the end). Augmented samples are stored in the specified directory.
+#
 # Note that all audio is mixed to mono.
+#
+# Output files are not randomized/shuffled, which makes it easier to check the
+# output versus the input sounds. They are simply numbered in the order in which
+# they are read
 #
 # You will need the following packages (install via pip):
 #  * numpy
@@ -39,7 +44,7 @@
 
 import random
 import argparse
-from os import makedirs, listdir
+from os import makedirs, listdir, rename
 from os.path import isdir, join, exists
 
 import shutil
@@ -50,9 +55,15 @@ import soundfile as sf
 # Specify version of this tool
 __version__ = "0.1"
 
+# Settings
+other_dir_name = "_other"
+bg_dir_name = "_background"
+
 ################################################################################
 # Functions
 
+# Ask yes/no to user to continue. Taken from:
+# https://stackoverflow.com/questions/3041986/apt-command-line-interface-like-yes-no-input
 def query_yes_no(question, default="yes"):
     """Ask a yes/no question via raw_input() and return their answer.
 
@@ -62,8 +73,6 @@ def query_yes_no(question, default="yes"):
         an answer is required of the user).
 
     The "answer" return value is True for "yes" or False for "no".
-
-    Taken from: https://stackoverflow.com/questions/3041986/apt-command-line-interface-like-yes-no-input
     """
     valid = {"yes": True, "y": True, "ye": True,
              "no": False, "n": False}
@@ -89,7 +98,7 @@ def query_yes_no(question, default="yes"):
 
 # Print iterations progress
 # From: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+def print_progress_bar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
     """
     Call in a loop to create terminal progress bar
     @params:
@@ -97,15 +106,17 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
         total       - Required  : total iterations (Int)
         prefix      - Optional  : prefix string (Str)
         suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        decimals    - Optional  : positive number of decimals--% complete (Int)
         length      - Optional  : character length of bar (Int)
         fill        - Optional  : bar fill character (Str)
         printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
     """
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    percent = ("{0:." + str(decimals) + "f}").format(100 * 
+            (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
-    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = printEnd)
+    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), 
+        end = printEnd)
     # Print New Line on Complete
     if iteration == total: 
         print()
@@ -117,6 +128,10 @@ def mix_audio(word_path=None,
                 bg_vol=1.0, 
                 sample_time=1.0,
                 sample_rate=16000):
+    """
+    Read in a wav file and background noise file. Resample and adjust volume as
+    necessary.
+    """
     
     # If no word file is given, just return random background noise
     if word_path == None:
@@ -148,9 +163,74 @@ def mix_audio(word_path=None,
     end_point = start_point + int(sample_time * sample_rate)
     
     # Mix the two sound samples (and multiply by volume)
-    waveform = [0.5 * word_vol * i for i in waveform] + (0.5 * bg_vol * bg_waveform[start_point:end_point])
+    waveform = [0.5 * word_vol * i for i in waveform] + \
+                (0.5 * bg_vol * bg_waveform[start_point:end_point])
 
     return waveform
+
+# Go through each wave file in given directory, mix with bg, save to new file
+def mix_files(word_dir, bg_dir, out_dir, num_file_digits=None, start_cnt=0):
+    """
+    Go through each wav file in word_dir, mix each with each wav file in bg_dir
+    and save to new file in out_dir.
+    
+    Returns the number of files created.
+    """
+
+    # Figure out number of digits so the filenames line up in OS
+    num_word_files = len(listdir(word_dir))
+    num_bg_files = len(listdir(bg_dir))
+    num_output_files = num_word_files * num_bg_files
+    calc_files = num_output_files
+    digit_cnt = 1
+    while(calc_files > 1):
+        calc_files = calc_files // 10
+        digit_cnt += 1
+
+    # If we're not given a file digits length, use the one we just calculated
+    if num_file_digits is None:
+        num_file_digits = digit_cnt
+
+    # Show progress bar
+    print(str(num_word_files) + " word files * " + str(num_bg_files) + " bg files = " +
+            str(num_output_files) + " output files")
+    print_progress_bar(0, 
+                        num_output_files, 
+                        prefix="Progress:", 
+                        suffix="Complete", 
+                        length=50)
+
+    # Go through each target word, mixing it with background noise
+    file_cnt = 0
+    for word_filename in listdir(word_path):
+        for bg_filename in listdir(bg_dir):
+
+            # Mix word with background noise
+            waveform = mix_audio(word_path=join(word_path, word_filename), 
+                                bg_path=join(bg_dir, bg_filename), 
+                                word_vol=word_vol, 
+                                bg_vol=bg_vol, 
+                                sample_time=sample_time,
+                                sample_rate=sample_rate)
+
+            # Save to new file
+            filename = str(start_cnt + file_cnt).zfill(num_file_digits) + '.wav'
+            sf.write(join(out_subdir, filename), 
+                    waveform, 
+                    sample_rate, 
+                    subtype=bit_depth)
+            file_cnt += 1
+
+            # Update progress bar
+            print_progress_bar(file_cnt + 1, 
+                                num_output_files, 
+                                prefix="Progress:", 
+                                suffix="Complete", 
+                                length=50)
+    
+    # Return file count
+    print()
+    return file_cnt
 
 ################################################################################
 # Main
@@ -279,7 +359,8 @@ if isdir(out_dir):
     resp = query_yes_no("Continue?")
     if resp:
         print("Deleting and recreating output directory.")
-        shutil.rmtree(out_dir)
+        rename(out_dir, out_dir + '_')
+        shutil.rmtree(out_dir + '_')
     else:
         print("Please delete directory to continue. Exiting.")
         exit()
@@ -287,77 +368,47 @@ if isdir(out_dir):
 # Create output dir
 if not exists(out_dir):
     makedirs(out_dir)
-# else:
-#     print("ERROR: Output directory could not be deleted. Exiting.")
-#     exit()
+else:
+    print("ERROR: Output directory could not be deleted. Exiting.")
+    exit()
 
 # Start with target words
 for target in target_list:
 
-    # Create subdirectory with the target word's name
+    # Create output subdirectory with the target word's name
     out_subdir = join(out_dir, target)
     makedirs(out_subdir)
 
-    # Figure out number of digits so the filenames line up in OS
-    word_path = join(words_dir, target_list[0])
-    num_word_files = len(listdir(word_path))
-    num_bg_files = len(listdir(bg_dir))
-    num_output_files = num_word_files * num_bg_files
-    digit_cnt = 1
-    calc_num = num_output_files
-    while(calc_num > 1):
-        calc_num = calc_num // 10
-        digit_cnt += 1
+    # Create full path to word directory
+    word_path = join(words_dir, target)
 
-    # Show progress bar
-    print("Mixing: '" + str(target) + "' (" + str(num_word_files) + 
-            " word files * " + str(num_bg_files) + " bg files = " +
-            str(num_output_files) + " output files)")
-    printProgressBar(0, 
-                    num_output_files, 
-                    prefix="Progress:", 
-                    suffix="Complete", 
-                    length=50)
+    # Start the mixing machine
+    print("Mixing: '" + str(target) +"'")
+    mix_files(word_path, bg_dir, out_subdir)
 
-    # Go through each target word, mixing it with background noise
-    file_cnt = 0
-    for word_filename in listdir(word_path):
-        for bg_filename in listdir(bg_dir):
+# Figure out total number of words in other category
+num_word_files = 0
+for word in other_list:
+    word_path = join(words_dir, word)
+    num_word_files += len(listdir(word_path))
 
-            # Mix word with background noise
-            waveform = mix_audio(word_path=join(word_path, word_filename), 
-                                bg_path=join(bg_dir, bg_filename), 
-                                word_vol=word_vol, 
-                                bg_vol=bg_vol, 
-                                sample_time=sample_time,
-                                sample_rate=sample_rate)
+# Calculate number of digits for our output files in other
+num_bg_files = len(listdir(bg_dir))
+num_output_files = num_word_files * num_bg_files
+digit_cnt = 1
+while(num_output_files > 1):
+    num_output_files = num_output_files // 10
+    digit_cnt += 1
 
-            # Save to new file
-            filename = str(file_cnt).zfill(digit_cnt) + '.wav'
-            sf.write(join(out_subdir, filename), 
-                    waveform, 
-                    sample_rate, 
-                    subtype=bit_depth)
-            file_cnt += 1
-
-            # Update progress bar
-            printProgressBar(file_cnt + 1, 
-                            num_output_files, 
-                            prefix="Progress:", 
-                            suffix="Complete", 
-                            length=50)
-
-# Open one word and mix it
-
-# word_files = [name for name in listdir(word_path)]
-# bg_files = [name for name in listdir(bg_dir)]
-# waveform = mix_audio(word_path=join(word_path, word_files[0]), 
-#                     bg_path=join(bg_dir, bg_files[0]), 
-#                     word_vol=word_vol, 
-#                     bg_vol=bg_vol, 
-#                     sample_time=sample_time,
-#                     sample_rate=sample_rate)
-
-# Save file
-# filename = "test.wav"
-# sf.write(join(out_dir, filename), waveform, sample_rate, subtype=bit_depth)
+# Mix together other files into "other" subdirectory
+out_subdir = join(out_dir, other_dir_name)
+makedirs(out_subdir)
+last_file_num = 0
+for word in other_list:
+    word_path = join(words_dir, word)
+    print("Mixing: '" + str(word) + "' to " + other_dir_name)
+    last_file_num = last_file_num + mix_files(word_path, 
+                                                bg_dir, 
+                                                out_subdir, 
+                                                digit_cnt, 
+                                                last_file_num)
