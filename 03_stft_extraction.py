@@ -67,6 +67,8 @@ import shutil
 import librosa
 import numpy as np
 
+import utils
+
 # Authorship
 __author__ = "Shawn Hymel"
 __copyright__ = "Copyright 2020, Shawn Hymel"
@@ -78,40 +80,6 @@ stft_min_bin = 1        # Lowest bin to use (inclusive; filter out DC)
 
 ################################################################################
 # Functions
-
-# Print iterations progress
-# From: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
-def print_progress_bar( iteration, 
-                        total, 
-                        prefix = '', 
-                        suffix = '', 
-                        decimals = 1, 
-                        length = 100, 
-                        fill = '█', 
-                        printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals--% complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-
-    percent = ("{0:." + str(decimals) + "f}").format(100 * 
-            (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), 
-        end = printEnd)
-
-    # Print New Line on Complete
-    if iteration == total: 
-        print()
 
 # Compute compressed version of Short-Time Fourier Transform (STFT)
 # TODO: Possible areas for improvement
@@ -315,11 +283,11 @@ for class_name in class_list:
 
     # Show progress bar
     print("Extracting features for " + class_name)
-    print_progress_bar( 0, 
-                        num_files, 
-                        prefix="Progress:", 
-                        suffix="Complete", 
-                        length=50)
+    utils.print_progress_bar(   0, 
+                                num_files, 
+                                prefix="Progress:", 
+                                suffix="Complete", 
+                                length=50)
 
     for i, filename in enumerate(listdir(class_dir)):
 
@@ -353,11 +321,11 @@ for class_name in class_list:
         sample_set[i] = stft
 
         # Update progress bar
-        print_progress_bar( i + 1, 
-                            num_files, 
-                            prefix="Progress:", 
-                            suffix="Complete", 
-                            length=50)
+        utils.print_progress_bar(   i + 1, 
+                                    num_files, 
+                                    prefix="Progress:", 
+                                    suffix="Complete", 
+                                    length=50)
         
     # Print newline as workaround for progress bar covering up characters
     print()

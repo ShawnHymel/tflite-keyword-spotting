@@ -21,11 +21,11 @@ You will need the following packages (install via pip):
  * shutil
 
 Example call:
-python wake_word_mixer.py -d "..\datasets\custom_wake_words_edited" 
-          -b "..\datasets\ambient_sounds" 
-          -o "..\datasets\custom_wake_words_mixed" 
-          -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
-          -n 5
+python 02_wake_word_mixer.py -d "../../Python/datasets/custom_wake_words_edited"
+    -b "../../Python/datasets/ambient/sounds" 
+    -o "../../Python/datasets/custom_wake_words_mixed" 
+    -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
+    -n 5
 
 The MIT License (MIT)
 
@@ -50,7 +50,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
 import random
 import argparse
 from os import makedirs, listdir, rename
@@ -60,6 +59,8 @@ import shutil
 import librosa
 import numpy as np
 import soundfile as sf
+
+import utils
 
 # Authorship
 __author__ = "Shawn Hymel"
@@ -73,74 +74,6 @@ bg_dir_name = "_background"
 
 ################################################################################
 # Functions
-
-# Ask yes/no to user to continue. Taken from:
-# https://stackoverflow.com/questions/3041986/apt-command-line-interface-like-yes-no-input
-def query_yes_no(question, default="yes"):
-    """Ask a yes/no question via raw_input() and return their answer.
-
-    "question" is a string that is presented to the user.
-    "default" is the presumed answer if the user just hits <Enter>.
-        It must be "yes" (the default), "no" or None (meaning
-        an answer is required of the user).
-
-    The "answer" return value is True for "yes" or False for "no".
-    """
-    valid = {"yes": True, "y": True, "ye": True,
-             "no": False, "n": False}
-    if default is None:
-        prompt = " [y/n] "
-    elif default == "yes":
-        prompt = " [Y/n] "
-    elif default == "no":
-        prompt = " [y/N] "
-    else:
-        raise ValueError("invalid default answer: '%s'" % default)
-
-    while True:
-        print(question + prompt)
-        choice = input().lower()
-        if default is not None and choice == '':
-            return valid[default]
-        elif choice in valid:
-            return valid[choice]
-        else:
-            print("Please respond with 'yes' or 'no' "
-                             "(or 'y' or 'n').\n")
-
-# Print iterations progress
-# From: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
-def print_progress_bar( iteration, 
-                        total, 
-                        prefix = '', 
-                        suffix = '', 
-                        decimals = 1, 
-                        length = 100, 
-                        fill = '█', 
-                        printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals--% complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-
-    percent = ("{0:." + str(decimals) + "f}").format(100 * 
-            (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), 
-        end = printEnd)
-
-    # Print New Line on Complete
-    if iteration == total: 
-        print()
 
 # Mix audio and random snippet of background noise
 def mix_audio(word_path=None, 
@@ -215,11 +148,11 @@ def mix_files(word_dir, bg_dir, out_dir, num_file_digits=None, start_cnt=0):
     # Show progress bar
     print(str(num_word_files) + " word files * " + str(num_bg_files) + 
             " bg files = " + str(num_output_files) + " output files")
-    print_progress_bar(0, 
-                        num_output_files, 
-                        prefix="Progress:", 
-                        suffix="Complete", 
-                        length=50)
+    utils.print_progress_bar(   0, 
+                                num_output_files, 
+                                prefix="Progress:", 
+                                suffix="Complete", 
+                                length=50)
 
     # Go through each target word, mixing it with background noise
     file_cnt = 0
@@ -243,11 +176,11 @@ def mix_files(word_dir, bg_dir, out_dir, num_file_digits=None, start_cnt=0):
             file_cnt += 1
 
             # Update progress bar
-            print_progress_bar(file_cnt + 1, 
-                                num_output_files, 
-                                prefix="Progress:", 
-                                suffix="Complete", 
-                                length=50)
+            utils.print_progress_bar(   file_cnt + 1, 
+                                        num_output_files, 
+                                        prefix="Progress:", 
+                                        suffix="Complete", 
+                                        length=50)
     
     # Return file count
     print()
@@ -396,7 +329,7 @@ if isdir(out_dir):
     print("WARNING: Output directory already exists:")
     print(out_dir)
     print("This tool will delete the output directory and everything in it.")
-    resp = query_yes_no("Continue?")
+    resp = utils.query_yes_no("Continue?")
     if resp:
         print("Deleting and recreating output directory.")
         rename(out_dir, out_dir + '_')
@@ -428,11 +361,11 @@ digit_cnt = len(str(num_bg_clips))
 print("Gathering random background noise snippets")
 print(str(num_bg_samples) + " samples per file * " + str(num_bg_files) + 
         " bg files = " + str(num_bg_clips) + " output files")
-print_progress_bar(0, 
-                    num_bg_clips, 
-                    prefix="Progress:", 
-                    suffix="Complete", 
-                    length=50)
+utils.print_progress_bar(   0, 
+                            num_bg_clips, 
+                            prefix="Progress:", 
+                            suffix="Complete", 
+                            length=50)
 
 # Go through each background file, taking a random sample from different points
 file_cnt = 0
@@ -456,11 +389,11 @@ for bg_filename in listdir(bg_dir):
         file_cnt += 1
 
         # Update progress bar
-        print_progress_bar(file_cnt + 1, 
-                            num_bg_clips, 
-                            prefix="Progress:", 
-                            suffix="Complete", 
-                            length=50)
+        utils.print_progress_bar(   file_cnt + 1, 
+                                    num_bg_clips, 
+                                    prefix="Progress:", 
+                                    suffix="Complete", 
+                                    length=50)
 
 # Newline to exit progress bar
 print()
