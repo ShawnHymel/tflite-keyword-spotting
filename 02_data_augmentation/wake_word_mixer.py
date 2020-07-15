@@ -1,53 +1,55 @@
-# Wake Word Mixer
-#
-# Author: Shawn Hymel
-# Date: July 2, 2020
-#
-# Script that reads in various spoken word samples, resamples them, and
-# combines them with random snippets of background noise. Samples that are too
-# long are truncated at the end, and samples that are too short are padded with
-# 0s (also at the end). Augmented samples are stored in the specified directory.
-#
-# Note that all audio is mixed to mono.
-#
-# Output files are not randomized/shuffled, which makes it easier to check the
-# output versus the input sounds. They are simply numbered in the order in which
-# they are read
-#
-# You will need the following packages (install via pip):
-#  * numpy
-#  * librosa
-#  * soundfile
-#  * shutil
-#
-# Example call:
-# python wake_word_mixer.py -d "..\datasets\custom_wake_words_edited" 
-#           -b "..\datasets\ambient_sounds" 
-#           -o "..\datasets\custom_wake_words_mixed" 
-#           -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
-#           -n 5
-#
-# The MIT License (MIT)
-#
-# Copyright (c) 2020 Shawn Hymel
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+#!/usr/bin/env python3
+
+"""
+Wake Word Mixer
+
+Script that reads in various spoken word samples, resamples them, and
+combines them with random snippets of background noise. Samples that are too
+long are truncated at the end, and samples that are too short are padded with
+0s (also at the end). Augmented samples are stored in the specified directory.
+
+Note that all audio is mixed to mono.
+
+Output files are not randomized/shuffled, which makes it easier to check the
+output versus the input sounds. They are simply numbered in the order in which
+they are read
+
+You will need the following packages (install via pip):
+ * numpy
+ * librosa
+ * soundfile
+ * shutil
+
+Example call:
+python wake_word_mixer.py -d "..\datasets\custom_wake_words_edited" 
+          -b "..\datasets\ambient_sounds" 
+          -o "..\datasets\custom_wake_words_mixed" 
+          -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
+          -n 5
+
+The MIT License (MIT)
+
+Copyright (c) 2020 Shawn Hymel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 
 import random
 import argparse
@@ -59,7 +61,10 @@ import librosa
 import numpy as np
 import soundfile as sf
 
-# Specify version of this tool
+# Authorship
+__author__ = "Shawn Hymel"
+__copyright__ = "Copyright 2020, Shawn Hymel"
+__license__ = "MIT"
 __version__ = "0.1"
 
 # Settings
@@ -105,7 +110,8 @@ def query_yes_no(question, default="yes"):
 
 # Print iterations progress
 # From: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
-def print_progress_bar (iteration, total, 
+def print_progress_bar( iteration, 
+                        total, 
                         prefix = '', 
                         suffix = '', 
                         decimals = 1, 
@@ -124,12 +130,14 @@ def print_progress_bar (iteration, total,
         fill        - Optional  : bar fill character (Str)
         printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
     """
+
     percent = ("{0:." + str(decimals) + "f}").format(100 * 
             (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
     print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), 
         end = printEnd)
+
     # Print New Line on Complete
     if iteration == total: 
         print()
@@ -355,7 +363,6 @@ num_bg_samples = args.num_bg_samples
 ###
 # Welcome screen
 
-
 # Print tool welcome message
 print("-----------------------------------------------------------------------")
 print("Wake Word Mixer Tool")
@@ -458,7 +465,6 @@ for bg_filename in listdir(bg_dir):
 # Newline to exit progress bar
 print()
 
-
 ###
 # Mix target words
 
@@ -505,3 +511,7 @@ for word in other_list:
                                                 out_subdir, 
                                                 digit_cnt, 
                                                 last_file_num)
+
+# Say we're done
+print("Done!")
+exit()
