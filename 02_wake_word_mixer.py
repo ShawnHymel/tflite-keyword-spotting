@@ -21,7 +21,8 @@ You will need the following packages (install via pip):
  * shutil
 
 Example call:
-python 02_wake_word_mixer.py -d "../../Python/datasets/custom_wake_words_edited"
+python 02_wake_word_mixer.py 
+    -d "../../Python/datasets/custom_wake_words_curated"
     -b "../../Python/datasets/ambient/sounds" 
     -o "../../Python/datasets/custom_wake_words_mixed" 
     -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
@@ -50,6 +51,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import time
 import random
 import argparse
 from os import makedirs, listdir, rename
@@ -176,7 +178,7 @@ def mix_files(word_dir, bg_dir, out_dir, num_file_digits=None, start_cnt=0):
             file_cnt += 1
 
             # Update progress bar
-            utils.print_progress_bar(   file_cnt + 1, 
+            utils.print_progress_bar(   file_cnt, 
                                         num_output_files, 
                                         prefix="Progress:", 
                                         suffix="Complete", 
@@ -332,8 +334,9 @@ if isdir(out_dir):
     resp = utils.query_yes_no("Continue?")
     if resp:
         print("Deleting and recreating output directory.")
-        rename(out_dir, out_dir + '_')
-        shutil.rmtree(out_dir + '_')
+        #rename(out_dir, out_dir + '_') # One way to deal with "cannot access"
+        shutil.rmtree(out_dir)
+        time.sleep(1.0)
     else:
         print("Please delete directory to continue. Exiting.")
         exit()
@@ -389,7 +392,7 @@ for bg_filename in listdir(bg_dir):
         file_cnt += 1
 
         # Update progress bar
-        utils.print_progress_bar(   file_cnt + 1, 
+        utils.print_progress_bar(   file_cnt, 
                                     num_bg_clips, 
                                     prefix="Progress:", 
                                     suffix="Complete", 

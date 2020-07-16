@@ -61,10 +61,11 @@ __version__ = "0.1"
 # Parse command line arguments
 
 # Script arguments
-parser = argparse.ArgumentParser(description="Audio mixing tool that "
-                                "combines spoken word examples with random "
-                                "bits of background noise to create a dataset "
-                                "for use with wake word training.")
+parser = argparse.ArgumentParser(description="Audio file curation tool that "
+                                "copies files from multiple source directories "
+                                "to an output directory. The script will also "
+                                "format the subdirectories to make the next "
+                                "script in the chain run more easily.")
 parser.add_argument('-m', 
                     '--max', 
                     action='store', 
