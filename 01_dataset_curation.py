@@ -39,6 +39,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import time
 import random
 import argparse
 from os import makedirs, listdir, rename
@@ -115,8 +116,9 @@ if isdir(out_dir):
     resp = utils.query_yes_no("Continue?")
     if resp:
         print("Deleting and recreating output directory.")
-        rename(out_dir, out_dir + '_')
-        shutil.rmtree(out_dir + '_')
+        #rename(out_dir, out_dir + '_') # One way to deal with OS blocking rm
+        shutil.rmtree(out_dir)
+        time.sleep(2.0)
     else:
         print("Please delete directory to continue. Exiting.")
         exit()

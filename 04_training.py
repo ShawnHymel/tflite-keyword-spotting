@@ -371,7 +371,7 @@ for i in range(num_train):
         f1_avg += f1 / len(target_idxs)
     
     # Print out metrics
-    print(cm)
+    print_confusion_matrix(cm, labels)
     print("Average false positive rate:", fpr_avg)
     print("Average false negative rate:", fnr_avg)
     print("Average F1 score:", f1_avg)
@@ -384,7 +384,8 @@ for i in range(num_train):
         
 print()
 print("Model evaluation done. Best score:", best_f1_score)
-print()
+print("Model summary:")
+model.summary()
 
 # Combine training and validation sets into one large set
 x_train_val = np.concatenate((x_train, x_val))

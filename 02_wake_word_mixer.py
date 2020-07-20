@@ -23,10 +23,10 @@ You will need the following packages (install via pip):
 Example call:
 python 02_wake_word_mixer.py 
     -d "../../Python/datasets/custom_wake_words_curated"
-    -b "../../Python/datasets/ambient/sounds" 
+    -b "../../Python/datasets/ambient_sounds" 
     -o "../../Python/datasets/custom_wake_words_mixed" 
     -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
-    -n 5
+    -n 10
 
 The MIT License (MIT)
 
@@ -278,9 +278,9 @@ parser.add_argument('-n',
                     action='store',
                     dest='num_bg_samples',
                     type=int,
-                    default=3,
+                    default=5,
                     help="Number of random clips to take from each background "
-                            "noise file (default: 3)")
+                            "noise file (default: 5)")
 
 # Parse arguments
 args = parser.parse_args()
