@@ -11,7 +11,7 @@ You will need the following packages (install via pip):
  * shutil
 
 Example call:
-python .\01_dataset_curation.py -m 200 
+python .\01_dataset_curation.py -m 100 
     -o "../../Python/datasets/custom_wake_words_curated"
     "../../Python/datasets/custom_wake_words_edited" 
     "../../Python/datasets/speech_commands_dataset"
