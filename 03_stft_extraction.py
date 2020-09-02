@@ -31,8 +31,8 @@ You will need the following packages (install via pip):
  * shutil
 
 Example call:
-python stft_extraction.py -d "../../../Python/datasets/custom_wake_words_mixed" 
-            -o "../../../Python/datasets/custom_wake_words_features" 
+python 03_stft_extraction.py -d "../../Python/datasets/custom_wake_words_mixed" 
+            -o "../../Python/datasets/custom_wake_words_features" 
             -s 1.0 -r 8000 -n 512 -i 400 -c 4000 -a 8 -b 3
 
 The MIT License (MIT)
@@ -85,6 +85,7 @@ stft_min_bin = 1        # Lowest bin to use (inclusive; filter out DC)
 # TODO: Possible areas for improvement
 #  - Use Mel-spaced frequency banks: https://stackoverflow.com/questions/54432486/normalizing-mel-spectrogram-to-unit-peak-amplitude
 #  - Automatic gain control (normalize FFT before mapping to 8-bit value?)
+#  - Per-channel energy normalization (PCEN) front end (does AGC)
 def calc_stft(  waveform, 
                 fs, 
                 nfft,
@@ -221,7 +222,7 @@ parser.add_argument('-a',
                     action='store',
                     dest='num_avg_bins',
                     type=int,
-                    default=4000,
+                    default=8,
                     help="Number of bins to average together in FFT (default: "
                             "8)")
 parser.add_argument('-b',

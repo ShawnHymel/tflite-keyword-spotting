@@ -11,7 +11,8 @@ You will need the following packages (install via pip):
  * tensorflow
 
 Example call:
-python 05_tflite_conversion.py -i "./model.h5" -o "./model.tflite"
+python 05_tflite_conversion.py -i "./model.h5" -o "./model.tflite" 
+    -n "model -c "./model.h"
 
 The MIT License (MIT)
 
@@ -46,12 +47,42 @@ from tensorflow import lite
 from tensorflow.keras import models
 
 import utils
+import c_writer
 
 # Authorship
 __author__ = "Shawn Hymel"
 __copyright__ = "Copyright 2020, Shawn Hymel"
 __license__ = "MIT"
 __version__ = "0.1"
+
+# Settings
+c_model_name = "model"
+
+################################################################################
+# Functions
+
+# Checks if file exists and prompts user to overwrite if so
+def file_exist_check(new_filename, to_append):
+    """
+    Checks if a given file exists on the hard disk. If so, prompt the user to
+    overwrite it. If user selects 'no,' attempt to create a new file with 
+    <to_append> appended to the end of the filename.
+    @params:
+        new_filename    - Requried : Name of file to check
+        to_append       - Required : String to append if file exists
+    """
+    while exists(new_filename):
+        print("WARNING: " + str(new_filename) + " already exists")
+        print(new_filename)
+        resp = utils.query_yes_no("Overwrite file?")
+        if resp:
+            print("Overwriting file")
+            remove(new_filename)
+            break
+        else:
+            new_filename += to_append
+            print("Trying:", new_filename)
+    return new_filename
 
 ################################################################################
 # Main
@@ -76,11 +107,27 @@ parser.add_argument('-o',
                     default="./model.tflite",
                     help="Path to store TensorFlow Lite file (default: "
                             "./model.tflite)")
+parser.add_argument('-n',
+                    '--c_name',
+                    action='store',
+                    type=str,
+                    default="model",
+                    help="Name of model (as a C array) in header file "
+                            "(default: ./model.h)")
+parser.add_argument('-c',
+                    '--c_file',
+                    action='store',
+                    type=str,
+                    default="./model.h",
+                    help="Path to store FlatBuffer model as a C array in a "
+                            "header file (default: ./model.h)")
 
 # # Parse arguments
 args = parser.parse_args()
 in_file = args.in_file
 out_file = args.out_file
+c_model_name = args.c_name
+c_file = args.c_file
 
 ###
 # Welcome screen
@@ -103,20 +150,23 @@ converter = lite.TFLiteConverter.from_keras_model(model)
 tflite_model = converter.convert()
 
 # Save TFLite model
-new_filename = out_file
-while exists(new_filename):
-    print("WARNING: TFLite Model file already exists")
-    print(new_filename)
-    resp = utils.query_yes_no("Overwrite file?")
-    if resp:
-        print("Overwriting file")
-        remove(new_filename)
-        break
-    else:
-        new_filename += "_.tflite"
-        print("Trying:", new_filename)
-open(new_filename, 'wb').write(tflite_model)
+new_filename = file_exist_check(out_file, "_.tflite")
+with open(new_filename, 'wb') as file:
+    file.write(tflite_model)
 print("TFLite model saved:", new_filename)
+
+# Convert model to C header file
+hex_array = [format(val, '#04x') for val in tflite_model]
+c_model = c_writer.create_array(np.array(hex_array), 
+                                'unsigned char', 
+                                c_model_name)
+header_str = c_writer.create_header(c_model, c_model_name)
+
+# Save C header file
+new_filename = file_exist_check(c_file, "_.h")
+with open(new_filename, 'w') as file:
+    file.write(header_str)
+print("C model saved:", new_filename)
 
 # Say we're done
 print("Done!")

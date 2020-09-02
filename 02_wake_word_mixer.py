@@ -26,7 +26,7 @@ python 02_wake_word_mixer.py
     -b "../../Python/datasets/ambient_sounds" 
     -o "../../Python/datasets/custom_wake_words_mixed" 
     -t "how_are_you, goodnight" -w 1.0 -g 0.5 -s 1.0 -r 16000 -e PCM_16
-    -n 10
+    -n 200
 
 The MIT License (MIT)
 

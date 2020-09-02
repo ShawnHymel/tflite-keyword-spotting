@@ -11,10 +11,22 @@ You will need the following packages (install via pip):
  * shutil
 
 Example call:
-python .\01_dataset_curation.py -m 100 
-    -o "../../Python/datasets/custom_wake_words_curated"
+python .\01_dataset_curation.py
+    -m 50 -o "../../Python/datasets/custom_wake_words_curated"
     "../../Python/datasets/custom_wake_words_edited" 
     "../../Python/datasets/speech_commands_dataset"
+
+Note that each input directory must be divided into "word" subdirectories. For
+example:
+  - speech_commands_dataset
+  |--- backward
+  |--- bed
+  |--- bird
+  |--- ...
+
+At this time, the script does not support input directories that share
+subdirectory names with other input directories' subdirectories (i.e. put all
+your word samples in a single subdirectory among the input directories).
 
 The MIT License (MIT)
 
