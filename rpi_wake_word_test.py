@@ -9,8 +9,10 @@ from tflite_runtime.interpreter import Interpreter
 import math
 
 # Settings
-model_path = 'goodnight_how_are_you_model.tflite'
-labels = ['goodnight', 'how_are_you', 'other', 'background'] # Always include 'other' and 'background'
+model_path = 'dracarys_model.tflite'
+labels = ['dracarys', 'other', 'background'] # Always include 'other' and 'background'
+audio_amp = 1.0         # Multiply raw audio signal by this amount
+stft_amp = 1.0          # Multiply each FFT bin by this amount (dunno why this helps)
 sample_time = 1.0       # Time for 1 sample (sec)
 sample_rate = 48000     # Sample rate (Hz) of microphone
 resample_rate = 8000    # Downsample to this rate (Hz)
@@ -54,7 +56,7 @@ stft_shift = stft.shape[1] - 1      # Shift STFT over by 1 time slice
 fft_cnt = 0                         # Count number of FFTs computed
 maf_buf = np.zeros((maf_pts, num_targets))  # Moving average filter buffer
 stfts_cnt = 0                       # Count number of STFTs computed
-in_holdoff = 0                      # Remember if we're in holdoff period
+in_holdoff = False                  # Remember if we're in holdoff period
 
 # Load model (interpreter)
 interpreter = Interpreter(model_path)
@@ -113,6 +115,9 @@ with sd.InputStream(channels=num_channels,
         if g_flag == 1:
             start = timeit.default_timer()
             
+            # Increase volume of signal
+            g_audio_buf *= audio_amp
+            
             # Get a window and reset flag
             window = hann_window * g_audio_buf
             g_flag = 0
@@ -128,6 +133,9 @@ with sd.InputStream(channels=num_channels,
 
             # Average every <stft_avg_bins bins> together to reduce size of FFT
             fft = np.mean(fft.reshape(-1, 8), axis=1)
+            
+            # Amplify FFT bins
+            fft *= stft_amp
 
             # Reduce precision by converting to 8-bit unsigned values [0..255]
             fft = np.around(fft / (2 ** shift_n_bits))
@@ -142,33 +150,36 @@ with sd.InputStream(channels=num_channels,
             if fft_cnt >= ffts_per_inference:
                 fft_cnt = 0
 
-                # Don't do inference if we're in a holdoff period
-                if in_holdoff == 1:
+                # Reshape features
+                in_tensor = np.float32(stft.reshape(1, stft.shape[0], stft.shape[1]))
+                interpreter.set_tensor(input_details[0]['index'], in_tensor)
+                
+                # Infer!
+                interpreter.invoke()
+                output_data = interpreter.get_tensor(output_details[0]['index'])
+                val = output_data[0]
+
+                # Push target word inference output values to buffer
+                maf_buf[:-1] = maf_buf[1:]
+                maf_buf[-1] = val[:-2] # Last 2 entries are 'other' and 'bg'
+
+                # Get average in each target category
+                maf_avg = np.sum(maf_buf, axis=0) / maf_pts
+                
+                # Print out result
+                print(maf_avg)
+                max_idx = np.argmax(maf_avg)
+                
+                # Only trigger if we're not in holdoff period
+                if in_holdoff:
                     stfts_cnt += 1
                     if stfts_cnt == holdoff_stfts:
-                        in_holdoff = 0
+                        in_holdoff = False
                         stfts_cnt = 0
+                        
                 else:
-
-                    # Reshape features
-                    in_tensor = np.float32(stft.reshape(1, stft.shape[0], stft.shape[1]))
-                    interpreter.set_tensor(input_details[0]['index'], in_tensor)
-                    
-                    # Infer!
-                    interpreter.invoke()
-                    output_data = interpreter.get_tensor(output_details[0]['index'])
-                    val = output_data[0]
-
-                    # Push target word inference output values to buffer
-                    maf_buf[:-1] = maf_buf[1:]
-                    maf_buf[-1] = val[:-2] # Last 2 entries are 'other' and 'bg'
-
-                    # Get average in each target category
-                    maf_avg = np.sum(maf_buf, axis=0) / maf_pts
-                    
-                    # Print out result
-                    print(maf_avg)
-                    max_idx = np.argmax(maf_avg)
+                
+                    # !!!Test to see if we heard the custom wake word!!!
                     if maf_avg[max_idx] >= threshold:
                         print(labels[max_idx])
                         in_holdoff = 1

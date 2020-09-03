@@ -15,7 +15,7 @@ You will need the following packages (install via pip)
  * sounddevice
 
 Example call:
-python rpi_rec_test.py -o "raw" -t 1.0
+python rpi_rec_test.py -f "raw" -t 1.0 -o "../../Python/tensorflow/raw_test.csv"
 
 The MIT License (MIT)
 
@@ -90,10 +90,10 @@ def calc_stft(waveform, fs, nfft, nhop):
 parser = argparse.ArgumentParser(description="Records -t seconds of audio and "
                                     "prints out raw audio (16-bit integers), "
                                     "STFT, or features (modified STFT).")
-parser.add_argument('-o',
-                    '--output',
+parser.add_argument('-f',
+                    '--format',
                     action='store',
-                    dest='output',
+                    dest='format',
                     type=str,
                     default='raw',
                     choices=['raw', 'stft', 'features'],
@@ -105,11 +105,19 @@ parser.add_argument('-t',
                     type=float,
                     default=1.0,
                     help="Time (in seconds) to record audio.")
+parser.add_argument('-o',
+                    '--output',
+                    action='store',
+                    type=str,
+                    default=None,
+                    help="CSV file to store output. Leave blank to print to "
+                            "console.")
 
 # Parse arguments
 args = parser.parse_args()
-output_format = args.output
+output_format = args.format
 duration = args.time
+output_file = args.output
 
 # Wait for user to press enter to start recording
 input("Press Enter to continue, recording starts on 'GO!'...")
@@ -134,16 +142,26 @@ rec = resample(rec, sample_rate, resample_rate)
 # Convert floating point wav data (-1.0 to 1.0) to 16-bit PCM
 rec = np.around(rec * 32767)
 
-# Print raw audio
+# Calculate raw audio
 if output_format == 'raw':
-    for s in rec[:-1]:
-        print(int(s), end=", ")
-    print(int(rec[-1]))
+    out = rec
 
-# Print STFT
+# Calculate STFT
 elif output_format == 'stft':
     print("Not implemented yet")
 
-# Print features (modified STFT)
+# Calculate features (modified STFT)
 elif output_format == 'features':
     print("Not implemented yet")
+
+# Print output to console or file
+if output_file == None:
+    for s in out[:-1]:
+        print(int(s), end=", ")
+    print(int(out[-1]))
+else:
+    with open(output_file, 'w') as f:
+        for s in out[:-1]:
+            f.write(str(int(s)))
+            f.write(", ")
+        f.write(str(int(out[-1])))
