@@ -1,189 +1,235 @@
-# You'll probably need PortAudio:
-#   sudo apt install libportaudio2
+######## Webcam Object Detection Using Tensorflow-trained Classifier #########
+#
+# Author: Evan Juras
+# Date: 10/27/19
+# Description: 
+# This program uses a TensorFlow Lite model to perform object detection on a live webcam
+# feed. It draws boxes and scores around the objects of interest in each frame from the
+# webcam. To improve FPS, the webcam object runs in a separate thread from the main program.
+# This script will work with either a Picamera or regular USB webcam.
+#
+# This code is based off the TensorFlow Lite image classification example at:
+# https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/examples/python/label_image.py
+#
+# I added my own method of drawing boxes and labels using OpenCV.
 
-import sounddevice as sd
-import numpy as np 
-import timeit
-from scipy import signal
-from tflite_runtime.interpreter import Interpreter
-import math
+# Import packages
+import os
+import argparse
+import cv2
+import numpy as np
+import sys
+import time
+from threading import Thread
+import importlib.util
 
-# Settings
-model_path = 'dracarys_model.tflite'
-labels = ['dracarys', 'other', 'background'] # Always include 'other' and 'background'
-audio_amp = 1.0         # Multiply raw audio signal by this amount
-stft_amp = 1.0          # Multiply each FFT bin by this amount (dunno why this helps)
-sample_time = 1.0       # Time for 1 sample (sec)
-sample_rate = 48000     # Sample rate (Hz) of microphone
-resample_rate = 8000    # Downsample to this rate (Hz)
-filter_cutoff = 4000    # Remove frequencies above this threshold (Hz)
-num_channels = 1
-stft_n_fft = 512        # Number of FFT bins (also, number of samples in each slice)
-stft_n_hop = 400        # Distance between start of each FFT slice (number of samples)
-stft_window = 'hanning' # "The window of choice if you don't have any better ideas"
-stft_min_bin = 1        # Lowest bin to use (inclusive; basically, filter out DC)       
-stft_avg_bins = 8       # Number of bins to average together to reduce FFT size
-shift_n_bits = 3        # Number of bits to shift 16-bit STFT values to make 8-bit values (before clipping)
-ffts_per_inference = 2  # Number of FFTs to compute before performing inference
-maf_pts = 3             # Number of points (depth) in moving average filter
-threshold = 0.5         # Softmax value for target word needs to be over this
-holdoff_time = 1.5      # Time (sec) before another target word can trigger
+# Define VideoStream class to handle streaming of video from webcam in separate processing thread
+# Source - Adrian Rosebrock, PyImageSearch: https://www.pyimagesearch.com/2015/12/28/increasing-raspberry-pi-fps-with-python-and-opencv/
+class VideoStream:
+    """Camera object that controls video streaming from the Picamera"""
+    def __init__(self,resolution=(640,480),framerate=30):
+        # Initialize the PiCamera and the camera image stream
+        self.stream = cv2.VideoCapture(0)
+        ret = self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        ret = self.stream.set(3,resolution[0])
+        ret = self.stream.set(4,resolution[1])
+            
+        # Read first frame from the stream
+        (self.grabbed, self.frame) = self.stream.read()
 
-# Calculated parameters
-stft_n_slices = int(math.ceil(((sample_time * resample_rate) / stft_n_hop) - 
-                (stft_n_fft / stft_n_hop)) + 1)
-stft_max_bin = int((stft_n_fft / 2) / ((resample_rate / 2) / filter_cutoff)) + 1
-stft_n_bins = (stft_max_bin - stft_min_bin) // stft_avg_bins
-stft_n_overlap = stft_n_fft - stft_n_hop
-hann_window = np.hanning(stft_n_fft)
-holdoff_stfts = int(holdoff_time / (ffts_per_inference * 
-                (stft_n_hop / resample_rate)))
-num_targets = len(labels) - 2
-print('N slices:', stft_n_slices)
-print('STFT max bin:', stft_max_bin)
-print('Num STFTs for holdoff:', holdoff_stfts)
+	# Variable to control when the camera is stopped
+        self.stopped = False
 
-# Some global variables to share with our audio callback
-g_flag = 0
-g_audio_buf = np.zeros((stft_n_fft,))
+    def start(self):
+	# Start the thread that reads frames from the video stream
+        Thread(target=self.update,args=()).start()
+        return self
 
-# Create our STFT buffer
-stft = np.zeros((stft_n_bins, stft_n_slices))
-print('STFT shape:', stft.shape)
+    def update(self):
+        # Keep looping indefinitely until the thread is stopped
+        while True:
+            # If the camera is stopped, stop the thread
+            if self.stopped:
+                # Close camera resources
+                self.stream.release()
+                return
 
-# Some other global variables not used by the callback
-stft_shift = stft.shape[1] - 1      # Shift STFT over by 1 time slice
-fft_cnt = 0                         # Count number of FFTs computed
-maf_buf = np.zeros((maf_pts, num_targets))  # Moving average filter buffer
-stfts_cnt = 0                       # Count number of STFTs computed
-in_holdoff = False                  # Remember if we're in holdoff period
+            # Otherwise, grab the next frame from the stream
+            (self.grabbed, self.frame) = self.stream.read()
 
-# Load model (interpreter)
-interpreter = Interpreter(model_path)
+	# Return the most recent frame
+    def read(self):
+        return self.frame
+
+    def stop(self):
+	# Indicate that the camera and thread should be stopped
+        self.stopped = True
+
+# Define and parse input arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--modeldir', help='Folder the .tflite file is located in',
+                    required=True)
+parser.add_argument('--graph', help='Name of the .tflite file, if different than detect.tflite',
+                    default='detect.tflite')
+parser.add_argument('--labels', help='Name of the labelmap file, if different than labelmap.txt',
+                    default='labelmap.txt')
+parser.add_argument('--threshold', help='Minimum confidence threshold for displaying detected objects',
+                    default=0.5)
+parser.add_argument('--resolution', help='Desired webcam resolution in WxH. If the webcam does not support the resolution entered, errors may occur.',
+                    default='1280x720')
+parser.add_argument('--edgetpu', help='Use Coral Edge TPU Accelerator to speed up detection',
+                    action='store_true')
+
+args = parser.parse_args()
+
+MODEL_NAME = args.modeldir
+GRAPH_NAME = args.graph
+LABELMAP_NAME = args.labels
+min_conf_threshold = float(args.threshold)
+resW, resH = args.resolution.split('x')
+imW, imH = int(resW), int(resH)
+use_TPU = args.edgetpu
+
+# Import TensorFlow libraries
+# If tflite_runtime is installed, import interpreter from tflite_runtime, else import from regular tensorflow
+# If using Coral Edge TPU, import the load_delegate library
+pkg = importlib.util.find_spec('tflite_runtime')
+if pkg:
+    from tflite_runtime.interpreter import Interpreter
+    if use_TPU:
+        from tflite_runtime.interpreter import load_delegate
+else:
+    from tensorflow.lite.python.interpreter import Interpreter
+    if use_TPU:
+        from tensorflow.lite.python.interpreter import load_delegate
+
+# If using Edge TPU, assign filename for Edge TPU model
+if use_TPU:
+    # If user has specified the name of the .tflite file, use that name, otherwise use default 'edgetpu.tflite'
+    if (GRAPH_NAME == 'detect.tflite'):
+        GRAPH_NAME = 'edgetpu.tflite'       
+
+# Get path to current working directory
+CWD_PATH = os.getcwd()
+
+# Path to .tflite file, which contains the model that is used for object detection
+PATH_TO_CKPT = os.path.join(CWD_PATH,MODEL_NAME,GRAPH_NAME)
+
+# Path to label map file
+PATH_TO_LABELS = os.path.join(CWD_PATH,MODEL_NAME,LABELMAP_NAME)
+
+# Load the label map
+with open(PATH_TO_LABELS, 'r') as f:
+    labels = [line.strip() for line in f.readlines()]
+
+# Have to do a weird fix for label map if using the COCO "starter model" from
+# https://www.tensorflow.org/lite/models/object_detection/overview
+# First label is '???', which has to be removed.
+if labels[0] == '???':
+    del(labels[0])
+
+# Load the Tensorflow Lite model.
+# If using Edge TPU, use special load_delegate argument
+if use_TPU:
+    interpreter = Interpreter(model_path=PATH_TO_CKPT,
+                              experimental_delegates=[load_delegate('libedgetpu.so.1.0')])
+    print(PATH_TO_CKPT)
+else:
+    interpreter = Interpreter(model_path=PATH_TO_CKPT)
+
 interpreter.allocate_tensors()
+
+# Get model details
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
-print(input_details)
+height = input_details[0]['shape'][1]
+width = input_details[0]['shape'][2]
 
-# Resample
-def resample(sig, old_fs, new_fs):
-    seconds = len(sig) / old_fs
-    num_samples = seconds * new_fs
-    resampled_signal = signal.resample(sig, int(num_samples))
-    #signal = signal / np.iinfo(np.int16).max
-    return resampled_signal
+floating_model = (input_details[0]['dtype'] == np.float32)
 
-# This gets called every time blocksize fills up
-def sd_callback(rec, frames, time, status):
+input_mean = 127.5
+input_std = 127.5
 
-    # Declare global variables
-    global g_flag
-    global g_audio_buf
-    
-    # Notify if errors
-    if status:
-        print('Error:', status)
-    
-    # Remove 2nd dimension from recording sample
-    rec = np.squeeze(rec)
-    
-    # Resample
-    rec = resample(rec, sample_rate, resample_rate)
+# Initialize frame rate calculation
+frame_rate_calc = 1
+freq = cv2.getTickFrequency()
 
-    # Convert floating point wav data (-1.0 to 1.0) to 16-bit PCM
-    rec = np.around(rec * 32767)
+# Initialize video stream
+videostream = VideoStream(resolution=(imW,imH),framerate=30).start()
+time.sleep(1)
 
-    # Copy last <n_overlap> samples to front of buffer
-    g_audio_buf[:stft_n_overlap] = g_audio_buf[-stft_n_overlap:]
+# Create window
+cv2.namedWindow('Object detector', cv2.WINDOW_AUTOSIZE)
 
-    # Append new recording to end of buffer
-    g_audio_buf[stft_n_overlap:] = rec
+#for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
+while True:
 
-    # Test
-    g_flag = 1
+    # Start timer (for calculating frame rate)
+    t1 = cv2.getTickCount()
 
-# Start streaming from microphone
-with sd.InputStream(channels=num_channels,
-                    samplerate=sample_rate,
-                    blocksize=int((sample_rate / resample_rate) * stft_n_hop),
-                    callback=sd_callback):
+    # Grab frame from video stream
+    frame1 = videostream.read()
 
-    start = timeit.default_timer()
-    while True:
-        
-        # If we get a flag from interrupt, compute features
-        if g_flag == 1:
-            start = timeit.default_timer()
+    # Acquire frame and resize to expected shape [1xHxWx3]
+    frame = frame1.copy()
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    frame_resized = cv2.resize(frame_rgb, (width, height))
+    input_data = np.expand_dims(frame_resized, axis=0)
+
+    # Normalize pixel values if using a floating model (i.e. if model is non-quantized)
+    if floating_model:
+        input_data = (np.float32(input_data) - input_mean) / input_std
+
+    # Perform the actual detection by running the model with the image as input
+    interpreter.set_tensor(input_details[0]['index'],input_data)
+    interpreter.invoke()
+
+    # Retrieve detection results
+    boxes = interpreter.get_tensor(output_details[0]['index'])[0] # Bounding box coordinates of detected objects
+    classes = interpreter.get_tensor(output_details[1]['index'])[0] # Class index of detected objects
+    scores = interpreter.get_tensor(output_details[2]['index'])[0] # Confidence of detected objects
+    #num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
+
+    # Loop over all detections and draw detection box if confidence is above minimum threshold
+    for i in range(len(scores)):
+        if ((scores[i] > min_conf_threshold) and (scores[i] <= 1.0)):
+
+            # Get bounding box coordinates and draw box
+            # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
+            ymin = int(max(1,(boxes[i][0] * imH)))
+            xmin = int(max(1,(boxes[i][1] * imW)))
+            ymax = int(min(imH,(boxes[i][2] * imH)))
+            xmax = int(min(imW,(boxes[i][3] * imW)))
             
-            # Increase volume of signal
-            g_audio_buf *= audio_amp
+            print("Box " + str(i) + ": (" + str(boxes[i][0]) + ", " + str(boxes[i][1]) + ")")
             
-            # Get a window and reset flag
-            window = hann_window * g_audio_buf
-            g_flag = 0
+            cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
 
-            # Calculate FFT
-            fft = np.abs(np.fft.rfft(window, n=stft_n_fft))
-
-            # Only keep the frequency bins we care about (i.e. filter out unwanted frequencies)
-            fft = fft[stft_min_bin:stft_max_bin] # With fs=8kHz, Nyquist is 4kHz
-
-            # Adjust for quantization and scaling in 16-bit fixed point FFT
-            fft = np.around(fft / stft_n_fft)
-
-            # Average every <stft_avg_bins bins> together to reduce size of FFT
-            fft = np.mean(fft.reshape(-1, 8), axis=1)
+            # Draw label
+            object_name = labels[int(classes[i])] # Look up object name from "labels" array using class index
+            label = '%s: %d%%' % (object_name, int(scores[i]*100)) # Example: 'person: 72%'
+            labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
+            label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
+            cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
+            cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
             
-            # Amplify FFT bins
-            fft *= stft_amp
+            print('Object ' + str(i) ': ' + str(object_name) + ' at (' + str(xcenter) + ', ' + str(ycenter) + ')')
 
-            # Reduce precision by converting to 8-bit unsigned values [0..255]
-            fft = np.around(fft / (2 ** shift_n_bits))
-            fft = np.clip(fft, a_min=0, a_max=255)
+    # Draw framerate in corner of frame
+    cv2.putText(frame,'FPS: {0:.2f}'.format(frame_rate_calc),(30,50),cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,0),2,cv2.LINE_AA)
 
-            # Shift STFT to the left by one slice in time and insert FFT at end
-            stft[:,:stft_shift] = stft[:,-stft_shift:]
-            stft[:,-1] = fft
-            
-            # Every time we calculate x FFTs, perform an inference with STFT
-            fft_cnt += 1
-            if fft_cnt >= ffts_per_inference:
-                fft_cnt = 0
+    # All the results have been drawn on the frame, so it's time to display it.
+    cv2.imshow('Object detector', frame)
 
-                # Reshape features
-                in_tensor = np.float32(stft.reshape(1, stft.shape[0], stft.shape[1]))
-                interpreter.set_tensor(input_details[0]['index'], in_tensor)
-                
-                # Infer!
-                interpreter.invoke()
-                output_data = interpreter.get_tensor(output_details[0]['index'])
-                val = output_data[0]
+    # Calculate framerate
+    t2 = cv2.getTickCount()
+    time1 = (t2-t1)/freq
+    frame_rate_calc= 1/time1
 
-                # Push target word inference output values to buffer
-                maf_buf[:-1] = maf_buf[1:]
-                maf_buf[-1] = val[:-2] # Last 2 entries are 'other' and 'bg'
+    # Press 'q' to quit
+    if cv2.waitKey(1) == ord('q'):
+        break
 
-                # Get average in each target category
-                maf_avg = np.sum(maf_buf, axis=0) / maf_pts
-                
-                # Print out result
-                print(maf_avg)
-                max_idx = np.argmax(maf_avg)
-                
-                # Only trigger if we're not in holdoff period
-                if in_holdoff:
-                    stfts_cnt += 1
-                    if stfts_cnt == holdoff_stfts:
-                        in_holdoff = False
-                        stfts_cnt = 0
-                        
-                else:
-                
-                    # !!!Test to see if we heard the custom wake word!!!
-                    if maf_avg[max_idx] >= threshold:
-                        print(labels[max_idx])
-                        in_holdoff = 1
-
-            #print('Time (ms):', timeit.default_timer() - start)
-            
-        pass
+# Clean up
+cv2.destroyAllWindows()
+videostream.stop()
